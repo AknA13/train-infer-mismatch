@@ -4,9 +4,7 @@
 
 - Measurement: Qwen3-1.7B and Qwen3-8B, 24 views each (23 + fixed-BI view), all scored.
 - RL: 17 GRPO arms (9 non-thinking seed 0, 4 non-thinking seed 1, 3 thinking mode, plus
-  smoke). Two runs (th_fp16 at 189/200, nt_vllmold_s1 at 191/200) are requeued behind a
-  full node; their tables will refresh via `make report` when they land. Nothing in the
-  conclusions depends on those last steps.
+  smoke). All 17 arms ran their full 200 steps (two were preempted up to four times and resumed from checkpoint).
 - Root cause of vLLM batch-invariant mode breaking a transformers forward isolated to
   the `aten::bmm` override x Qwen3 RoPE (bench/probe_bi.py, bench/probe_bmm.py); fix in
   mismatch/fp32head.py::patch_rope_no_bmm.

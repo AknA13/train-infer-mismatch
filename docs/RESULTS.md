@@ -117,14 +117,14 @@ compare the change from step 0, not the level):
 | none | 0.840 -> 0.875 | 0.785 -> 0.855 | stable |
 | tis | 0.840 -> 0.895 | 0.785 -> 0.860 | stable |
 | fp16 | 0.850 -> 0.860 | 0.790 -> 0.875 | stable |
-| vllm_old | 0.840 -> 0.850 | 0.785 -> 0.780 | **collapsed at step 95** |
+| vllm_old | 0.840 -> 0.850 | 0.785 -> 0.640 | **collapsed at step 95** |
 
 Reading it:
 
 - **The framework bug collapses.** On seed 1 the "sampler logprobs as PPO
   old-logprobs" arm went from 0.74 to 0.03 train accuracy between steps 90 and
   100 with 96% of completions running to the length cap, then partially
-  recovered to ~0.75. On seed 0 the same arm only dipped to 0.77 around step
+  recovered, finishing at 0.64 eval with 29% of completions still truncated. On seed 0 the same arm only dipped to 0.77 around step
   100 and recovered. No other arm on either seed did anything like this. The
   mechanism is visible in the logs: entropy fell from 0.11 to 0.05 by step 90,
   and over steps 60 to 90 the mismatch KL rose from 6e-4 to 1.5e-3 and the
@@ -169,11 +169,11 @@ step 200 for the bf16 arms, ~650 to 840 for fp16.
 |---|---|---|---|---|---|
 | th_none | 0.710 -> 0.890 | 1.0e-3 -> 2.4e-3 | 3.2e-3 | 0.215 -> 0.047 | 21 |
 | th_tis | 0.710 -> 0.890 | 1.0e-3 -> 1.0e-3 | 1.2e-3 | 0.218 -> 0.075 | 28 |
-| th_fp16 (189/200 steps, preempted 3x, resumed) | 0.670 -> 0.895 | 1.5e-5 -> 1.4e-5 | 2.2e-5 | 0.192 -> 0.113 | 29 |
+| th_fp16 (preempted 4x, resumed) | 0.670 -> 0.920 | 1.5e-05 -> 1.5e-05 | 2.2e-05 | 0.192 -> 0.123 | 29 |
 
 No collapse. The bf16 baseline's mismatch grew 2.4x as its entropy fell to
 0.047 (the largest drift of any arm), TIS held it flat, and fp16 held it 100x
-lower. Same final accuracy for all three. The long-horizon stress mostly
+lower. fp16 finished highest (0.92 vs 0.89), within what one seed can tell. The long-horizon stress mostly
 disappears because RL shortens the outputs; a run that rewarded length would
 be the real test and was not done.
 
