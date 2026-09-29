@@ -86,29 +86,40 @@ def attribution(R, tag):
     fig.tight_layout(); fig.savefig(FIG / f"attribution_{tag}.png", dpi=160); plt.close(fig)
 
 
+RL_GROUPS = {
+    "corrections": ["nt_none", "nt_tis", "nt_mis", "nt_icepop", "nt_seqtis", "nt_vllmold"],
+    "system_fixes": ["nt_none", "nt_fp16", "nt_fp32head", "nt_bi"],
+    "seeds": ["nt_none", "nt_none_s1", "nt_tis", "nt_tis_s1", "nt_fp16", "nt_fp16_s1", "nt_vllmold", "nt_vllmold_s1"],
+    "thinking": ["th_none", "th_tis", "th_fp16"],
+}
+
+
 def rl_curves():
     p = C.RESULTS_DIR / "rl_series.json"
     if not p.exists():
         return
-    S = json.load(open(p))["arms"]
-    if not S:
-        return
-    keys = [("acc", "train accuracy (reward)"), ("kl_k3", "KL k3 sampler‖trainer"),
+    S = {s["arm"]: s for s in json.load(open(p))["arms"]}
+    keys = [("acc", "train accuracy (reward), 10-step mean"), ("kl_k3", "KL k3 sampler‖trainer"),
             ("band", "frac tokens outside [0.8,1.25]"), ("entropy", "policy entropy (nats/token)"),
             ("grad_norm", "grad norm"), ("mean_len", "mean completion length")]
-    fig, axes = plt.subplots(2, 3, figsize=(14, 7))
-    for ax, (k, title) in zip(axes.ravel(), keys):
-        for i, s in enumerate(S):
-            v = np.array(s[k], dtype=float)
-            if k == "acc" and len(v) >= 10:
-                v = np.convolve(v, np.ones(10) / 10, mode="valid")
-            ax.plot(np.arange(len(v)), v, lw=1.6, color=ARM_COLORS[i % len(ARM_COLORS)], label=s["arm"])
-        if k in ("kl_k3", "band", "grad_norm"):
-            ax.set_yscale("log")
-        ax.set_title(title, loc="left", fontsize=10); ax.set_xlabel("step"); style(ax)
-    axes[0, 0].legend(frameon=False, fontsize=8, ncol=2)
-    fig.suptitle("GRPO arms", x=0.01, ha="left", fontsize=12)
-    fig.tight_layout(); fig.savefig(FIG / "rl_curves.png", dpi=160); plt.close(fig)
+    for gname, arms in RL_GROUPS.items():
+        arms = [a for a in arms if a in S]
+        if not arms:
+            continue
+        fig, axes = plt.subplots(2, 3, figsize=(14, 7))
+        for ax, (k, title) in zip(axes.ravel(), keys):
+            for i, a in enumerate(arms):
+                v = np.array(S[a][k], dtype=float)
+                if k == "acc" and len(v) >= 10:
+                    v = np.convolve(v, np.ones(10) / 10, mode="valid")
+                ls = "--" if a.endswith("_s1") else "-"
+                ax.plot(np.arange(len(v)), v, lw=1.6, ls=ls, color=ARM_COLORS[i % len(ARM_COLORS)], label=a)
+            if k in ("kl_k3", "band", "grad_norm"):
+                ax.set_yscale("log")
+            ax.set_title(title, loc="left", fontsize=10); ax.set_xlabel("step"); style(ax)
+        axes[0, 0].legend(frameon=False, fontsize=8, ncol=2)
+        fig.suptitle(f"GRPO arms: {gname}", x=0.01, ha="left", fontsize=12)
+        fig.tight_layout(); fig.savefig(FIG / f"rl_{gname}.png", dpi=160); plt.close(fig)
 
 
 def main():
