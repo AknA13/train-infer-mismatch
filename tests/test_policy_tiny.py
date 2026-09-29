@@ -59,6 +59,12 @@ def main():
         extra = pol2.load(Path(d) / "ckpt")
         same = all(torch.equal(a, b) for a, b in zip(pol.params, pol2.params))
         check("checkpoint round trip", same and extra["step"] == 7)
+        # fp32 head keeps HF parameter names for the engine loader
+        pol4 = Policy(str(Path(d) / "tiny"), dtype="bf16", lr=1e-3, grad_ckpt=False, device="cpu", fp32_head=True)
+        n4 = dict(pol4.named_weights())
+        check("fp32_head: model.norm.weight name preserved", "model.norm.weight" in n4 and not any(".norm.norm." in k for k in n4))
+        lp4, _, m4 = pol4.logprobs(ids, am, plen, clen)
+        check("fp32_head: logprobs close to plain", float((lp4.detach() - lp.detach()).abs().max()) < 0.05)
         # fp16 path: loss scaling + overflow skip
         pol3 = Policy(str(Path(d) / "tiny"), dtype="fp16", lr=1e-3, grad_ckpt=False, device="cpu")
         lp3, _, m3 = pol3.logprobs(ids, am, plen, clen)

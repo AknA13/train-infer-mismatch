@@ -40,7 +40,10 @@ class Policy:
             patch_hf(self.model)
         self.fp32_head = fp32_head
         self.model.train()
-        self.named = [(n, p) for n, p in self.model.named_parameters() if p.requires_grad]
+        # Fp32Norm wraps the final norm, so its weight is named model.norm.norm.weight;
+        # the engine's loader (and checkpoints) want the original HF name.
+        self.named = [(n.replace(".norm.norm.", ".norm."), p)
+                      for n, p in self.model.named_parameters() if p.requires_grad]
         self.params = [p for _, p in self.named]
         self.master = [p.detach().clone().float() for p in self.params]
         self.acc = [torch.zeros_like(m) for m in self.master]
