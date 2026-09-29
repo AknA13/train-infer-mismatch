@@ -19,6 +19,11 @@ declare -A ARMS=(
   [th_none]="--mode none"
   [th_tis]="--mode tis"
   [th_fp16]="--mode none --dtype fp16"
+  # second seed for the noise floor on the headline comparison
+  [nt_none_s1]="--mode none --seed 1"
+  [nt_tis_s1]="--mode tis --seed 1"
+  [nt_fp16_s1]="--mode none --dtype fp16 --seed 1"
+  [nt_vllmold_s1]="--mode vllm_old --seed 1"
 )
 NT="--no-thinking --max-tokens 768"
 TH="--max-tokens 2048 --gmu 0.45"
