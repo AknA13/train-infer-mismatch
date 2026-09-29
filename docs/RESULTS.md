@@ -102,7 +102,7 @@ Reading it:
 - fp16 keeps the mismatch 40 to 60x lower throughout training for free (same
   tokens/s), reproducing the Sea AI Lab result inside a live RL loop. Its lower
   final accuracy is within noise, but note its entropy fell furthest (0.044).
-- The fp32 head halves the mismatch at a 29% throughput cost (the head is 17%
+- The fp32 head halves the mismatch at a 29% throughput cost (the head is about 18%
   of the 1.7B model's FLOPs and runs in fp32 on both sides).
 - Batch-invariant mode costs 21% throughput and changes nothing about the
   trainer-vs-sampler gap, as section 1 predicted; it solves a different
