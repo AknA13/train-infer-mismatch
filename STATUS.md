@@ -11,7 +11,7 @@
   the `aten::bmm` override x Qwen3 RoPE (bench/probe_bi.py, bench/probe_bmm.py); fix in
   mismatch/fp32head.py::patch_rope_no_bmm.
 
-Compute used: ~11 GPU-hours on H200s, never more than 4 at once, qos=preemptive.
+Compute used: 14 GPU-hours (sacct, 28 job records incl. requeues) on H200s, never more than 4 at once, qos=preemptive.
 
 Not done / next: larger models and MoE (routing mismatch), a length-rewarding
 long-horizon run, more seeds for the correction arms, the vLLM-side fp32 head as a
