@@ -34,6 +34,7 @@ Noise floor (mean abs) = 3.309e-06; gate M1 (< 0.001): **PASS**
 | vllm_bf16_triton | vllm | Triton attention backend | 0.0300 | 0.0107 | -0.0003332 | 0.1391 | 1.2924 | 0.001648 |
 | hf_bf16_sdpa_bs8 | hf | padded batch of 8 | 0.0345 | 0.0120 | -0.0005568 | 0.1578 | 1.5010 | 0.003064 |
 | hf_bf16_sdpa_bs1 | hf | trainer baseline | 0.0346 | 0.0121 | -0.0005879 | 0.1587 | 1.4206 | 0.003173 |
+| hf_bf16_sdpa_bs1_bi_ropefix | hf | batch-invariant ops + RoPE without bmm | 0.0346 | 0.0121 | -0.0006528 | 0.1579 | 1.9834 | 0.003153 |
 | vllm_bf16_fa_eager | vllm | enforce_eager (no cudagraph/compile) | 0.0348 | 0.0120 | -0.0006012 | 0.1579 | 2.4626 | 0.003187 |
 | hf_bf16_eager_bs1 | hf | eager attention | 0.0420 | 0.0141 | -0.000795 | 0.1880 | 2.7227 | 0.006239 |
 | hf_bf16_sdpa_bs1_nativelogits | hf | log_softmax in bf16 | 0.0542 | 0.0266 | 0.004794 | 0.2003 | 1.4306 | 0.006623 |
@@ -50,7 +51,8 @@ Noise floor (mean abs) = 3.309e-06; gate M1 (< 0.001): **PASS**
 | batch-invariant: prefill vs decode (vllm_bf16_fa_bi vs vllm_sample @bi corpus) | 0 | 0 | 0 | 0 | 0 | 1.0000 | 0 |
 | fp16 both sides (hf_fp16_sdpa_bs1 vs vllm_fp16_fa) | 0.005698 | 0.001754 | - | 5.186e-06 | 0 | 0.9525 | 0.6338 |
 | fp32 both sides (kernel-only residual) (hf_fp32_eager vs vllm_fp32_triton) | 0.002358 | 0.0007256 | - | 0 | 0 | 0.9912 | 0.2733 |
-| batch-invariant both sides (hf_bf16_sdpa_bs1_bi vs vllm_bf16_fa_bi) | 0.3476 | 0.0248 | - | 0.0127 | 0.0003293 | 0.1670 | 158.0875 |
+| batch-invariant both sides (broken RoPE) (hf_bf16_sdpa_bs1_bi vs vllm_bf16_fa_bi) | 0.3476 | 0.0248 | - | 0.0127 | 0.0003293 | 0.1670 | 158.0875 |
+| batch-invariant both sides, RoPE fixed (hf_bf16_sdpa_bs1_bi_ropefix vs vllm_bf16_fa_bi) | 0.0450 | 0.0139 | - | 0.008243 | 2.204e-05 | 0.0146 | 6.6419 |
 | fp32 head on trainer only (hf_bf16_sdpa_bs1_fp32head vs vllm_bf16_fa) | 0.0384 | 0.0132 | - | 0.00468 | 7.779e-06 | 0.1989 | 5.5493 |
 
 ### Trainer-vs-sampler gap by reference token probability
@@ -89,6 +91,7 @@ Baseline gap hf_bf16_sdpa_bs1 vs vllm_bf16_fa: rms 0.0449, mean abs 0.0139, outs
 | enforce_eager (no cudagraph/compile) (vllm_bf16_fa_eager) | vllm | 0.0420 | -0.00294 | 0.0348 | 0.004936 |
 | Triton attention backend (vllm_bf16_triton) | vllm | 0.0452 | 0.0002553 | 0.0300 | 0.0001796 |
 | FlexAttention backend (vllm_bf16_flex) | vllm | 0.0452 | 0.0003408 | 0.0299 | 9.979e-05 |
+| batch-invariant ops + RoPE without bmm (hf_bf16_sdpa_bs1_bi_ropefix) | hf | 0.0450 | 4.678e-05 | 0.0346 | 3.358e-05 |
 | batch-invariant mode (vllm_bf16_fa_bi) | vllm | 0.0449 | 2.711e-09 | 0.0298 | 1.878e-09 |
 | prefix caching off (vllm_bf16_fa_noprefix) | vllm | 0.0449 | 0 | 0.0298 | 0 |
 | FlashInfer backend (vllm_bf16_flashinfer) | vllm | 0.0450 | 6.691e-05 | 0.0298 | -7.888e-06 |
