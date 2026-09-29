@@ -156,17 +156,17 @@ def main():
                 "err_rms_vs_ref": e, "err_delta_vs_family_baseline": (e - e0) if (e is not None and e0 is not None) else None,
                 "frac_outside_band_vs_other": g["token"]["frac_outside_band"] if g else None})
         # dtype vs kernel split and the independence check (gate M3)
-        if all(k in views for k in ("hf_fp32_eager", "vllm_fp32_fa", "hf_fp32_sdpa", "vllm_bf16_fa", hb)):
+        if all(k in views for k in ("hf_fp32_eager", "vllm_fp32_triton", "hf_fp32_sdpa", "vllm_bf16_fa", hb)):
             la, lb, *_ = flatten_pair(views[hb], views[vb])
             lr, _, *_ = flatten_pair(views[ref], views[hb])
             dec = M.error_decomposition(la, lb, lr)
             pred = float(np.sqrt(dec["rms_err_a"] ** 2 + dec["rms_err_b"] ** 2))
             att["split"] = {
-                "kernel_only_fp32_gap_rms": pair(views, "hf_fp32_eager", "vllm_fp32_fa", sampled_from_b=False)["token"]["rms_gap"],
+                "kernel_only_fp32_gap_rms": pair(views, "hf_fp32_eager", "vllm_fp32_triton", sampled_from_b=False)["token"]["rms_gap"],
                 "trainer_dtype_effect_rms": errs[hb]["rms_err"],
                 "trainer_kernel_effect_rms": errs["hf_fp32_sdpa"]["rms_err"],
                 "infer_dtype_effect_rms": errs[vb]["rms_err"] if vb in errs else None,
-                "infer_kernel_effect_rms": errs["vllm_fp32_fa"]["rms_err"],
+                "infer_kernel_effect_rms": errs["vllm_fp32_triton"]["rms_err"],
                 "decomposition": dec,
                 "gap_predicted_if_independent": pred,
                 "gap_measured": dec["rms_gap"],

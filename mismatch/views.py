@@ -64,8 +64,10 @@ VIEWS = [
          flags=["--dtype", "bfloat16", "--backend", "FLASH_ATTN", "--batch-invariant"]),
     dict(name="vllm_fp16_fa", scorer="vllm", toggle="fp16 instead of bf16",
          flags=["--dtype", "float16", "--backend", "FLASH_ATTN"]),
-    dict(name="vllm_fp32_fa", scorer="vllm", toggle="fp32 weights+activations",
-         flags=["--dtype", "float32", "--backend", "FLASH_ATTN"]),
+    # FlashAttention rejects fp32 ("dtype not supported"); Triton is the fp32-capable
+    # backend, so the kernel-only residual is measured HF-fp32-eager vs vLLM-fp32-Triton.
+    dict(name="vllm_fp32_triton", scorer="vllm", toggle="fp32 weights+activations (Triton backend)",
+         flags=["--dtype", "float32", "--backend", "TRITON_ATTN"]),
 ]
 
 # Pairs the report always prints, (train-side, infer-side, description).
@@ -75,7 +77,7 @@ HEADLINE_PAIRS = [
     ("vllm_bf16_fa", "vllm_sample", "vLLM prefill vs vLLM decode (same engine)"),
     ("vllm_bf16_fa_bi", "vllm_sample_bi", "batch-invariant: prefill vs decode"),
     ("hf_fp16_sdpa_bs1", "vllm_fp16_fa", "fp16 both sides"),
-    ("hf_fp32_eager", "vllm_fp32_fa", "fp32 both sides (kernel-only residual)"),
+    ("hf_fp32_eager", "vllm_fp32_triton", "fp32 both sides (kernel-only residual)"),
     ("hf_bf16_sdpa_bs1_bi", "vllm_bf16_fa_bi", "batch-invariant both sides"),
     ("hf_bf16_sdpa_bs1_fp32head", "vllm_bf16_fa", "fp32 head on trainer only"),
 ]
