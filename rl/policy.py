@@ -124,6 +124,10 @@ class Policy:
             a.zero_()
         return {"grad_norm": gnorm, "skipped": not finite, "loss_scale": self.loss_scale}
 
+    def fingerprint(self, names):
+        d = dict(self.named)
+        return {n: float(d[n].float().sum()) for n in names if n in d}
+
     def named_weights(self):
         """(hf_name, low-precision tensor) pairs for the rollout engine."""
         return [(n, p.data) for n, p in self.named]

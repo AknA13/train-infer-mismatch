@@ -55,6 +55,18 @@ class RolloutEngine:
         outs = self.llm.generate([TokensPrompt(prompt_token_ids=p) for p in prompt_ids], sp, use_tqdm=False)
         return [{"ids": list(o.outputs[0].token_ids), "finish": o.outputs[0].finish_reason} for o in outs]
 
+    FINGERPRINT_NAMES = ("model.embed_tokens.weight", "model.layers.0.mlp.down_proj.weight", "model.norm.weight")
+
+    def fingerprint(self):
+        """float sums of a few tensors, by HF name, read from inside the engine."""
+        names = self.FINGERPRINT_NAMES
+
+        def _fp(model):
+            params = dict(model.named_parameters())
+            return {n: float(params[n].float().sum()) for n in names if n in params}
+
+        return self.llm.apply_model(_fp)[0]
+
     @torch.no_grad()
     def sync_weights(self, named_tensors):
         """named_tensors: iterable of (hf_name, tensor) in the engine's dtype."""

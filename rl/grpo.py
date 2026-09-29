@@ -123,7 +123,8 @@ def main():
     def evaluate(step):
         t0 = time.time()
         outs = engine.greedy(test_ids, args.max_tokens)
-        acc = np.mean([verify_answer(tok.decode(o["ids"], skip_special_tokens=True), p["answer"]) for o, p in zip(outs, test)])
+        acc = np.mean([o["finish"] != "length" and verify_answer(tok.decode(o["ids"], skip_special_tokens=True), p["answer"])
+                       for o, p in zip(outs, test)])
         trunc = np.mean([o["finish"] == "length" for o in outs])
         rec = {"step": step, "eval_acc": float(acc), "eval_trunc": float(trunc),
                "eval_len": float(np.mean([len(o["ids"]) for o in outs])), "eval_s": time.time() - t0}
@@ -179,7 +180,7 @@ def main():
                 lp_inf[r, : clen[r]] = torch.tensor(seqs[i]["lp"], device=lp_inf.device)
             loss, st = L.grpo_loss(args.mode, lp_tr, lp_inf, adv[idx].cuda(), mask, n_tok_total, clip=args.clip)
             policy.backward(loss)
-            loss_sum += float(loss); w_sum += st["w_sum"]; ent_sum += float((ent * mask).sum())
+            loss_sum += float(loss.detach()); w_sum += st["w_sum"]; ent_sum += float((ent * mask).sum())
             pad = lambda t: torch.nn.functional.pad(t.detach(), (0, Tmax_all - Tm))
             all_tr.append(pad(lp_tr)); all_inf.append(pad(lp_inf)); all_mask.append(pad(mask))
         opt = policy.step()
@@ -191,6 +192,12 @@ def main():
         t2 = time.time()
         sync = engine.sync_weights(policy.named_weights())
         t_sync = time.time() - t2
+        sync_ok = None
+        if step % args.ckpt_every == 0 or step < 2:
+            fe, ft = engine.fingerprint(), policy.fingerprint(engine.FINGERPRINT_NAMES)
+            sync_ok = all(abs(fe[n] - ft[n]) <= 1e-3 * max(1.0, abs(ft[n])) for n in fe)
+            if not sync_ok:
+                print(f"[grpo] WEIGHT SYNC MISMATCH engine={fe} trainer={ft}", flush=True)
 
         rec = {"step": step, "reward": float(rewards_t.mean()), "acc": float(rewards_t.mean()),
                "trunc": float(np.mean([s["trunc"] for s in seqs])), "mean_len": float(np.mean(lens)),
@@ -201,14 +208,14 @@ def main():
                "mean_logp_infer": mstats.get("mean_logp_infer"),
                "mismatch": {k: v for k, v in mstats.items() if k not in ("hist", "by_train_prob", "step")},
                "by_train_prob": mstats.get("by_train_prob"), "hist": mstats.get("hist"),
-               "t_gen": t_gen, "t_train": t_train, "t_sync": t_sync, "t_step": time.time() - t0,
+               "t_gen": t_gen, "t_train": t_train, "t_sync": t_sync, "sync_ok": sync_ok, "n_loaded": sync["n_loaded"], "t_step": time.time() - t0,
                "gpu_mem_gib": torch.cuda.max_memory_allocated() / 2**30, "cursor": cursor}
         log_line(steps_path, rec)
         print(f"[grpo] step {step:4d} acc={rec['acc']:.3f} len={rec['mean_len']:.0f} trunc={rec['trunc']:.2f} "
               f"loss={rec['loss']:+.4f} gn={rec['grad_norm']:.3f} H={rec['entropy']:.3f} "
               f"kl3={mstats['kl_k3']:.2e} |gap|={mstats['mean_abs_gap']:.3e} band={mstats['frac_outside_band']:.4f} "
               f"ess={mstats['seq_is_ess_frac']:.2f} w={rec['w_mean']:.3f} "
-              f"t={rec['t_step']:.0f}s (gen {t_gen:.0f} train {t_train:.0f} sync {t_sync:.1f})", flush=True)
+              f"t={rec['t_step']:.0f}s (gen {t_gen:.0f} train {t_train:.0f} sync {t_sync:.2f}{'' if sync_ok is None else (' ok' if sync_ok else ' MISMATCH')})", flush=True)
 
         done = step + 1
         if done % args.eval_every == 0 or done == args.steps:
