@@ -34,7 +34,7 @@ CAP="${TIM_MAX_GPUS:-4}"
 if command -v squeue >/dev/null 2>&1; then
   # user-held jobs cannot run, so they do not count against the cap
   HELD=$(squeue -u "$USER" -h -t RUNNING,PENDING -O "tres-alloc:40,reason:30" 2>/dev/null \
-         | grep -v JobHeldUser | grep -o 'gres/gpu=[0-9]*' | cut -d= -f2 | paste -sd+ - | bc 2>/dev/null)
+         | grep -v JobHeldUser | grep -o 'gres/gpu[^=,]*=[0-9]*' | cut -d= -f2 | paste -sd+ - | bc 2>/dev/null)
   HELD="${HELD:-0}"
   if [ $((HELD + GPUS)) -gt "$CAP" ]; then
     die "GPU cap: already hold ${HELD} GPU(s), asking for ${GPUS}, cap is ${CAP}.
