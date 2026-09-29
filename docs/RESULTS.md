@@ -177,7 +177,7 @@ lower. fp16 finished highest (0.92 vs 0.89), within what one seed can tell. The 
 disappears because RL shortens the outputs; a run that rewarded length would
 be the real test and was not done.
 
-Preemption note: th_fp16 was preempted three times; every resume reproduced
+Preemption note: th_fp16 was preempted four times; every resume reproduced
 the pre-preemption step exactly (same accuracy, KL and lengths at step 150),
 so the checkpoint/resume path is deterministic.
 
