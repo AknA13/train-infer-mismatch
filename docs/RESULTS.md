@@ -50,6 +50,30 @@ the trainer exactly, so the fused kernels help. (2) Computing log-softmax in bf1
 instead of fp32 adds a systematic +0.005 bias (the trainer looks sharper than
 it is), and is the single cheapest thing to get wrong.
 
+
+### Does it change with model size? (Qwen3-8B, same protocol, 837k tokens)
+
+| quantity | 1.7B | 8B |
+|---|---|---|
+| trainer bf16 error vs fp32 (rms) | 0.0346 | 0.0301 |
+| vLLM bf16 error vs fp32 (rms) | 0.0298 | 0.0267 |
+| trainer-vs-sampler KL(k3) | 1.0e-3 | 7.8e-4 |
+| frac tokens outside [0.8,1.25] | 0.82% | 0.60% |
+| sequence IS effective sample size | 5% | 12% |
+| corr(err_trainer, err_vllm) | 0.035 | 0.023 |
+| fp32-both-sides residual (rms) | 0.0024 | 0.0019 |
+| fp16 both sides, gap rms | 0.0057 | 0.0050 |
+| fp32 head on trainer, trainer error | 0.0252 (-27%) | 0.0197 (-35%) |
+| fp8 KV cache, vLLM error | 0.178 | 0.131 |
+| batch-invariant on trainer, broken / RoPE-fixed | 0.346 / 0.0346 | 0.218 / 0.0300 |
+| vLLM prefill vs decode (same engine) | 0.0102 | 0.0148 |
+
+Same picture, slightly smaller gap at 8B; every ranking of toggles is
+preserved, including the RoPE failure (8B has an untied lm_head, so the fp32-head
+result is not a tied-embedding artefact). The one quantity that grows with size
+is vLLM's own prefill-vs-decode disagreement (0.010 to 0.015), which the
+batch-invariant mode zeroes on both models.
+
 ## 2. vLLM's batch-invariant mode breaks a transformers forward, and why
 
 Applying `enable_batch_invariant_mode()` to the trainer process gave rms error
