@@ -32,9 +32,12 @@ done
 # partition preempts; hogging just means my own jobs get requeued.
 CAP="${TIM_MAX_GPUS:-4}"
 if command -v squeue >/dev/null 2>&1; then
-  # user-held jobs cannot run, so they do not count against the cap
-  HELD=$(squeue -u "$USER" -h -t RUNNING,PENDING -O "tres-alloc:40,reason:30" 2>/dev/null \
-         | grep -v JobHeldUser | grep -o 'gres/gpu[^=,]*=[0-9]*' | cut -d= -f2 | paste -sd+ - | bc 2>/dev/null)
+  # user-held jobs cannot run, so they do not count against the cap.
+  # Field width matters: at 40 chars "gres/gpu=1" is truncated off the
+  # tres-alloc string and the guard silently counts 0 (happened 2026-09-29).
+  SQ=$(timeout 60 squeue -u "$USER" -h -t RUNNING,PENDING -O "tres-alloc:120,reason:30" 2>&1) \
+    || { [ "${TIM_CAP_OVERRIDE:-0}" = 1 ] || die "squeue failed ($SQ); refusing to submit blind. TIM_CAP_OVERRIDE=1 to force."; }
+  HELD=$(echo "$SQ" | grep -v JobHeldUser | grep -o 'gres/gpu[^=,]*=[0-9]*' | cut -d= -f2 | paste -sd+ - | bc 2>/dev/null)
   HELD="${HELD:-0}"
   if [ $((HELD + GPUS)) -gt "$CAP" ]; then
     die "GPU cap: already hold ${HELD} GPU(s), asking for ${GPUS}, cap is ${CAP}.
