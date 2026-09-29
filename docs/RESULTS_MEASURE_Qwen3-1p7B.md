@@ -19,6 +19,7 @@ Noise floor (mean abs) = 3.309e-06; gate M1 (< 0.001): **PASS**
 | hf_fp32_sdpa | hf | sdpa kernel @fp32 | 6.795e-06 | 2.314e-06 | -2.18e-09 | 3.052e-05 | 0.0003929 | 0 |
 | hf_fp64_eager | hf | fp64 (subset) | 9.261e-06 | 3.309e-06 | -3.355e-08 | 4.196e-05 | 0.0003567 | 0 |
 | hf_fp32_tf32 | hf | TF32 matmul @fp32 | 0.00169 | 0.0005075 | -8.784e-07 | 0.00729 | 0.2440 | 1.297e-06 |
+| vllm_fp32_triton | vllm | fp32 weights+activations (Triton backend) | 0.002358 | 0.0007256 | -7.543e-06 | 0.0105 | 0.1891 | 0 |
 | vllm_fp16_fa | vllm | fp16 instead of bf16 | 0.003807 | 0.001341 | -2.315e-07 | 0.0174 | 0.2815 | 2.593e-06 |
 | hf_fp16_sdpa_bs1 | hf | fp16 instead of bf16 | 0.004316 | 0.001504 | -1.925e-05 | 0.0198 | 0.2474 | 1.297e-06 |
 | hf_bf16_sdpa_bs1_fp32head | hf | fp32 norm+lm_head | 0.0252 | 0.007864 | -0.0002985 | 0.1130 | 1.3731 | 0.001555 |
@@ -48,6 +49,7 @@ Noise floor (mean abs) = 3.309e-06; gate M1 (< 0.001): **PASS**
 | vLLM prefill vs vLLM decode (same engine) (vllm_bf16_fa vs vllm_sample) | 0.0102 | 0.0008769 | 5.157e-05 | 0.000328 | 0 | 0.8733 | 1.6420 |
 | batch-invariant: prefill vs decode (vllm_bf16_fa_bi vs vllm_sample @bi corpus) | 0 | 0 | 0 | 0 | 0 | 1.0000 | 0 |
 | fp16 both sides (hf_fp16_sdpa_bs1 vs vllm_fp16_fa) | 0.005698 | 0.001754 | - | 5.186e-06 | 0 | 0.9525 | 0.6338 |
+| fp32 both sides (kernel-only residual) (hf_fp32_eager vs vllm_fp32_triton) | 0.002358 | 0.0007256 | - | 0 | 0 | 0.9912 | 0.2733 |
 | batch-invariant both sides (hf_bf16_sdpa_bs1_bi vs vllm_bf16_fa_bi) | 0.3476 | 0.0248 | - | 0.0127 | 0.0003293 | 0.1670 | 158.0875 |
 | fp32 head on trainer only (hf_bf16_sdpa_bs1_fp32head vs vllm_bf16_fa) | 0.0384 | 0.0132 | - | 0.00468 | 7.779e-06 | 0.1989 | 5.5493 |
 
@@ -95,9 +97,17 @@ Baseline gap hf_bf16_sdpa_bs1 vs vllm_bf16_fa: rms 0.0449, mean abs 0.0139, outs
 | padded batch of 8 (hf_bf16_sdpa_bs8) | hf | 0.0449 | 1.707e-05 | 0.0345 | -0.00012 |
 | fp32 norm+lm_head (hf_bf16_sdpa_bs1_fp32head) | hf | 0.0384 | -0.006521 | 0.0252 | -0.009432 |
 | fp16 instead of bf16 (vllm_fp16_fa) | vllm | 0.0348 | -0.0101 | 0.003807 | -0.0260 |
+| fp32 weights+activations (Triton backend) (vllm_fp32_triton) | vllm | 0.0347 | -0.0102 | 0.002358 | -0.0275 |
 | fp16 instead of bf16 (hf_fp16_sdpa_bs1) | hf | 0.0301 | -0.0148 | 0.004316 | -0.0303 |
 | TF32 matmul @fp32 (hf_fp32_tf32) | hf | 0.0299 | -0.0150 | 0.00169 | -0.0329 |
 | sdpa kernel @fp32 (hf_fp32_sdpa) | hf | 0.0298 | -0.0151 | 6.795e-06 | -0.0346 |
+
+### dtype vs kernels
+
+- fp32 both sides (kernel-only residual): rms 0.002358
+- trainer side: bf16 error 0.0346 vs sdpa@fp32 error 6.795e-06
+- inference side: bf16 error 0.0298 vs fp32-vLLM error 0.002358
+- independence check: predicted gap sqrt(ea^2+eb^2) = 0.0457, measured 0.0449, corr(err_a, err_b) = 0.0351 -> gate M3 **PASS**
 
 ## M2 phenomenon reproduces
 
