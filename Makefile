@@ -11,7 +11,7 @@ help:
 	@echo "  make grpo ARM=none                   stage 4 (see scripts/04_grpo.sh)"
 
 test:
-	@rc=0; for t in tests/test_repo_integrity.py tests/test_metrics.py tests/test_store.py tests/test_score_hf_tiny.py; do \
+	@rc=0; for t in tests/test_repo_integrity.py tests/test_metrics.py tests/test_store.py tests/test_score_hf_tiny.py tests/test_losses.py tests/test_monitor.py tests/test_policy_tiny.py; do \
 	  echo; echo "===== $$t ====="; $(PY) $$t || rc=1; done; \
 	echo; if [ $$rc -ne 0 ]; then echo "SOME TESTS FAILED"; else echo "ALL TESTS PASSED"; fi; exit $$rc
 

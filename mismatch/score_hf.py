@@ -31,6 +31,7 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from mismatch.fp32head import Fp32Norm
 
 DTYPES = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32, "fp64": torch.float64}
 
@@ -52,21 +53,6 @@ def parse():
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--overwrite", action="store_true")
     return ap.parse_args()
-
-
-class Fp32Norm(torch.nn.Module):
-    """Run the final RMSNorm on an fp32 copy of its input and keep fp32 on the
-    way out, so norm + lm_head form an fp32 island (MiniMax-M1's fix)."""
-
-    def __init__(self, norm):
-        super().__init__()
-        self.norm = norm
-
-    def forward(self, x):
-        n = self.norm
-        x = x.float()
-        var = x.pow(2).mean(-1, keepdim=True)
-        return n.weight.float() * (x * torch.rsqrt(var + n.variance_epsilon))
 
 
 @torch.no_grad()
