@@ -28,29 +28,32 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config as C
 
-ARMS = ["plain", "bi", "bi_noworkspace", "bi_nomean", "bi_nolt"]
+ARMS = ["plain", "bi", "bi_flags_only", "bi_only_softmax", "bi_only_logsoftmax", "bi_only_mean", "bi_only_bmm"]
 
 
 def child(arm, model, corpus, ref_path, n_rows):
     import torch
     if arm != "plain":
-        from vllm.model_executor.layers.batch_invariant import enable_batch_invariant_mode
-        enable_batch_invariant_mode()
-        if arm == "bi_noworkspace":
-            os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None); os.environ.pop("CUBLASLT_WORKSPACE_SIZE", None)
-        if arm == "bi_nolt":
-            torch.backends.cuda.preferred_blas_library(backend="cublas")
+        from vllm.model_executor.layers import batch_invariant as B
+        orig_bmm = torch.bmm
+        B.enable_batch_invariant_mode()
+        if arm.startswith("bi_flags_only") or arm.startswith("bi_only_"):
+            # drop every aten override the mode registered; keep env + flags + cuBLASLt
+            B._batch_invariant_LIB._destroy()
+            torch.bmm = orig_bmm
+            lib = torch.library.Library("aten", "IMPL")
+            if arm == "bi_only_softmax":
+                lib.impl("aten::softmax", B.softmax_batch_invariant, "CUDA")
+                lib.impl("aten::_softmax", B.softmax_batch_invariant, "CUDA")
+            elif arm == "bi_only_logsoftmax":
+                lib.impl("aten::_log_softmax", B._log_softmax_batch_invariant, "CUDA")
+            elif arm == "bi_only_mean":
+                lib.impl("aten::mean.dim", B.mean_batch_invariant, "CUDA")
+            elif arm == "bi_only_bmm":
+                lib.impl("aten::bmm", B.bmm_batch_invariant, "CUDA"); torch.bmm = B.bmm_batch_invariant
+            globals()["_keep_lib"] = lib
     torch.backends.cuda.matmul.allow_tf32 = False
     from transformers import AutoModelForCausalLM
-    from transformers.models.qwen3 import modeling_qwen3 as mq
-    if arm == "bi_nomean":
-        def fwd(self, hidden_states):
-            dt = hidden_states.dtype
-            h = hidden_states.to(torch.float32)
-            var = (h * h).sum(-1, keepdim=True) / h.shape[-1]
-            h = h * torch.rsqrt(var + self.variance_epsilon)
-            return self.weight * h.to(dt)
-        mq.Qwen3RMSNorm.forward = fwd
     from mismatch.common import read_corpus
     from mismatch.store import View
     rows = read_corpus(corpus)[:n_rows]
