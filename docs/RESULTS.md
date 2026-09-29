@@ -109,40 +109,77 @@ Final greedy accuracy on 200 gsm8k-test problems:
 | fp32head | fp32 norm+head both sides | 0.835 -> 0.895 | 3.4e-4 -> 4.1e-4 | 5004 |
 | bi | batch-invariant both sides (+RoPE fix) | 0.840 -> 0.890 | 6.3e-4 -> 6.5e-4 | 5652 |
 
+Second seed (different prompt order, different 200-problem eval subset, so
+compare the change from step 0, not the level):
+
+| arm | seed 0: eval 0 -> 200 | seed 1: eval 0 -> 200 | seed 1 outcome |
+|---|---|---|---|
+| none | 0.840 -> 0.875 | 0.785 -> 0.855 | stable |
+| tis | 0.840 -> 0.895 | 0.785 -> 0.860 | stable |
+| fp16 | 0.850 -> 0.860 | 0.790 -> 0.875 | stable |
+| vllm_old | 0.840 -> 0.850 | 0.785 -> 0.780 | **collapsed at step 95** |
+
 Reading it:
 
+- **The framework bug collapses.** On seed 1 the "sampler logprobs as PPO
+  old-logprobs" arm went from 0.74 to 0.03 train accuracy between steps 90 and
+  100 with 96% of completions running to the length cap, then partially
+  recovered to ~0.75. On seed 0 the same arm only dipped to 0.77 around step
+  100 and recovered. No other arm on either seed did anything like this. The
+  mechanism is visible in the logs: entropy fell from 0.11 to 0.05 by step 90,
+  and over steps 60 to 90 the mismatch KL rose from 6e-4 to 1.5e-3 and the
+  band-violation fraction doubled, twenty to thirty steps *before* the reward
+  moved. PPO's clip then zeroes the gradient on precisely the tokens the two
+  engines disagree about, which are the low-probability ones, and the policy
+  drifts with no signal to pull it back. This is the unstable/stable pair gate
+  M4 asked for, and the monitor's KL and band signals are a usable early warning.
 - The token-level corrections (tis, mis, icepop) are indistinguishable from no
-  correction at this scale; 0.875 to 0.895 is one seed's noise. They touch
-  under 1% of tokens because that is how many are outside the band.
-- The framework bug is the one arm that visibly misbehaved: between steps 80
-  and 130 its train accuracy fell to 0.77 (others 0.88), entropy collapsed to
-  0.05, completions lengthened to 560 tokens with 15% truncation, and the
-  mismatch KL doubled. It recovered, but finished lowest. PPO's clip zeroes the
-  gradient on exactly the tokens the sampler disagrees about, which are the
-  low-probability ones the policy most needs signal on.
+  correction at this scale. Seed-to-seed spread of the final eval is about
+  +-0.02, and they sit inside it. They touch under 1% of tokens because that is
+  how many are outside the band.
 - Sequence-level IS is the wrong tool: with ~300-token completions its weights
-  had ESS 0.15 to 0.55 and mean 0.89, and it is the only arm whose mismatch
-  drifted by more than 2x.
+  had ESS 0.15 to 0.55 and mean 0.89, it is the only arm whose mismatch drifted
+  by more than 2x, and it finished lowest of the stable arms (0.805).
 - fp16 keeps the mismatch 40 to 60x lower throughout training for free (same
-  tokens/s), reproducing the Sea AI Lab result inside a live RL loop. Its lower
-  final accuracy is within noise, but note its entropy fell furthest (0.044).
-- The fp32 head halves the mismatch at a 29% throughput cost (the head is about 18%
-  of the 1.7B model's FLOPs and runs in fp32 on both sides).
+  tokens/s), reproducing the Sea AI Lab result inside a live RL loop. It needed
+  dynamic loss scaling (no overflow steps occurred). One caution: seed 0's
+  entropy fell to 0.044, the lowest of any stable arm, and its KL rose 5x in the
+  last 25 steps with grad-norm spikes; seed 1 did not show this.
+- The fp32 head halves the mismatch at a 29% throughput cost (the head is about
+  18% of the 1.7B model's FLOPs and runs in fp32 on both sides).
 - Batch-invariant mode costs 21% throughput and changes nothing about the
   trainer-vs-sampler gap, as section 1 predicted; it solves a different
   problem (prefill vs decode determinism inside the engine).
 - In every arm the mismatch tracks policy entropy: as the policy sharpens the
   KL rises, then falls back when entropy recovers. The drift over 200 steps is
-  at most 2x for the token-level arms.
+  at most 2x for the stable arms.
 
 Monitor overhead (gate M5): 3.4 s over a 40-minute run, 0.13%.
 
 ## 4. Long-horizon (thinking mode, 2048-token cap)
 
-_Pending: th_none, th_tis, th_fp16 running._ Starting point: 71% greedy accuracy,
-27% of completions truncated at 2048, mean 1474 tokens, KL(k3) 1.0e-3 with
-sequence ESS 0.22. By step 50 the baseline had learned to cut mean length to
-555 tokens with 3% truncation.
+Same recipe with Qwen3's thinking mode on and a 2048-token cap. Start: 71%
+greedy accuracy, 27% of completions truncated, mean 1474 tokens, mismatch KL
+1.0e-3 with sequence ESS 0.15 (the sequence-level ratio is hopeless at this
+length). The reward is correctness with truncation counted as wrong, so the
+policy learns to be shorter: mean length 1474 -> 555 by step 50 -> ~400 by
+step 200 for the bf16 arms, ~650 to 840 for fp16.
+
+| arm | eval 0 -> 200 | KL(k3) first10 -> last10 | max KL | entropy first -> last | s/step |
+|---|---|---|---|---|---|
+| th_none | 0.710 -> 0.890 | 1.0e-3 -> 2.4e-3 | 3.2e-3 | 0.215 -> 0.047 | 21 |
+| th_tis | 0.710 -> 0.890 | 1.0e-3 -> 1.0e-3 | 1.2e-3 | 0.218 -> 0.075 | 28 |
+| th_fp16 (189/200 steps, preempted 3x, resumed) | 0.670 -> 0.895 | 1.5e-5 -> 1.4e-5 | 2.2e-5 | 0.192 -> 0.113 | 29 |
+
+No collapse. The bf16 baseline's mismatch grew 2.4x as its entropy fell to
+0.047 (the largest drift of any arm), TIS held it flat, and fp16 held it 100x
+lower. Same final accuracy for all three. The long-horizon stress mostly
+disappears because RL shortens the outputs; a run that rewarded length would
+be the real test and was not done.
+
+Preemption note: th_fp16 was preempted three times; every resume reproduced
+the pre-preemption step exactly (same accuracy, KL and lengths at step 150),
+so the checkpoint/resume path is deterministic.
 
 ## Gates
 
@@ -151,7 +188,7 @@ sequence ESS 0.22. By step 50 the baseline had learned to cut mean length to
 | M1 reference noise floor < 1e-3 | PASS (3.3e-6) |
 | M2 gap >= 10x floor | PASS (4190x) |
 | M3 independent-error prediction within 25% | PASS (1.7%, corr 0.035) |
-| M4 RL informative | PASS as a measured negative: no collapse at 1.7B / 200 steps; framework bug and sequence IS hurt; fp16 removes the gap for free; drift tracks entropy |
+| M4 RL informative | PASS: unstable/stable pair found (framework bug collapses on seed 1, every correction and fix stays stable); the monitor's KL and band signals lead the collapse by ~25 steps; fp16 removes the gap for free; drift tracks entropy |
 | M5 monitor overhead < 2% | PASS (0.13%) |
 
 ## What I would claim, and what I would not
@@ -159,8 +196,10 @@ sequence ESS 0.22. By step 50 the baseline had learned to cut mean length to
 Claim: on this model and hardware the train/inference mismatch is bf16
 rounding on two independent paths, concentrated on low-probability tokens,
 unaffected by attention backend or batching, removed 8x by fp16 on both sides,
-and not by itself destabilising for 200 GRPO steps at 1.7B. The realistic way
-to get hurt is to feed the sampler's logprobs into PPO's ratio.
+and not by itself destabilising for 200 GRPO steps at 1.7B when the loss is a
+plain policy gradient. The realistic way to get hurt is to feed the sampler's
+logprobs into PPO's ratio: that arm collapsed on one of two seeds and dipped on
+the other, and the mismatch monitor saw it coming 25 steps early.
 
 Not claimed: that the corrections never matter (larger models, MoE routing,
 longer horizons and more steps are exactly the settings the literature reports

@@ -18,4 +18,17 @@ make measure MODEL=Qwen/Qwen3-1.7B  # stages 1-3 on one GPU
 slurm/submit.sh --job grpo_none --gpus 1 --requeue -- scripts/04_grpo.sh none
 ```
 
-Status: see `STATUS.md`.
+Headline results (Qwen3-1.7B and 8B, H200, vLLM 0.12 vs transformers 4.57):
+
+- the sampler-vs-trainer gap is bf16 rounding on two *independent* paths
+  (gap = quadrature sum of each side's error vs fp32); attention backend,
+  batching, chunking and prefix caching change nothing; fp16 on both sides cuts
+  it 8x, an fp32 head 27-35%, an fp8 KV cache makes it 4x worse;
+- vLLM's batch-invariant mode makes prefill and decode bit-identical but does
+  not touch the trainer gap, and its `aten::bmm` override silently runs fp32 at
+  TF32 precision, which wrecks transformers' RoPE (isolated and fixed here);
+- in GRPO, token-level corrections (TIS/MIS/IcePop) are indistinguishable from
+  none over 200 steps; feeding vLLM logprobs into PPO's ratio collapsed on one
+  of two seeds, and the monitor's KL rose ~25 steps before the reward fell.
+
+Full write-up: `docs/RESULTS.md`. Status: `STATUS.md`.

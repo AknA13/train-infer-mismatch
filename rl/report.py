@@ -95,7 +95,7 @@ def f(x, nd=3):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--arms", default="")
     a = ap.parse_args()
-    dirs = sorted(p for p in C.RL_DIR.glob("*") if p.is_dir())
+    dirs = sorted(p for p in C.RL_DIR.glob("*") if p.is_dir() and not p.name.startswith("smoke"))
     if a.arms:
         dirs = [C.RL_DIR / x for x in a.arms.split(",")]
     arms = [s for s in (summarize(d) for d in dirs) if s]
