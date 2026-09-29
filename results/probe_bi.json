@@ -27,36 +27,60 @@
    }
   },
   {
-   "arm": "bi_noworkspace",
+   "arm": "bi_flags_only",
    "n_tokens": 15049,
-   "rms": 0.36767062544822693,
-   "mean_abs": 0.033068425953388214,
-   "max_abs": 17.453353881835938,
-   "frac_gt_1": 0.003920526280816001,
-   "env": {
-    "CUBLAS_WORKSPACE_CONFIG": null,
-    "CUBLASLT_WORKSPACE_SIZE": null
-   }
-  },
-  {
-   "arm": "bi_nomean",
-   "n_tokens": 15049,
-   "rms": 0.3681882321834564,
-   "mean_abs": 0.033313486725091934,
-   "max_abs": 17.33448028564453,
-   "frac_gt_1": 0.003854076682836069,
+   "rms": 0.038562431931495667,
+   "mean_abs": 0.014348769560456276,
+   "max_abs": 0.5241432189941406,
+   "frac_gt_1": 0.0,
    "env": {
     "CUBLAS_WORKSPACE_CONFIG": ":16:8",
     "CUBLASLT_WORKSPACE_SIZE": "1"
    }
   },
   {
-   "arm": "bi_nolt",
+   "arm": "bi_only_softmax",
    "n_tokens": 15049,
-   "rms": 0.36767062544822693,
-   "mean_abs": 0.033068425953388214,
-   "max_abs": 17.453353881835938,
-   "frac_gt_1": 0.003920526280816001,
+   "rms": 0.038562431931495667,
+   "mean_abs": 0.014348769560456276,
+   "max_abs": 0.5241432189941406,
+   "frac_gt_1": 0.0,
+   "env": {
+    "CUBLAS_WORKSPACE_CONFIG": ":16:8",
+    "CUBLASLT_WORKSPACE_SIZE": "1"
+   }
+  },
+  {
+   "arm": "bi_only_logsoftmax",
+   "n_tokens": 15049,
+   "rms": 0.038562431931495667,
+   "mean_abs": 0.014348769560456276,
+   "max_abs": 0.5241432189941406,
+   "frac_gt_1": 0.0,
+   "env": {
+    "CUBLAS_WORKSPACE_CONFIG": ":16:8",
+    "CUBLASLT_WORKSPACE_SIZE": "1"
+   }
+  },
+  {
+   "arm": "bi_only_mean",
+   "n_tokens": 15049,
+   "rms": 0.03773243725299835,
+   "mean_abs": 0.014158728532493114,
+   "max_abs": 0.5587425231933594,
+   "frac_gt_1": 0.0,
+   "env": {
+    "CUBLAS_WORKSPACE_CONFIG": ":16:8",
+    "CUBLASLT_WORKSPACE_SIZE": "1"
+   }
+  },
+  {
+   "arm": "bi_only_bmm",
+   "n_tokens": 15049,
+   "rms": 0.3681882321834564,
+   "mean_abs": 0.033313486725091934,
+   "max_abs": 17.33448028564453,
+   "frac_gt_1": 0.003854076682836069,
    "env": {
     "CUBLAS_WORKSPACE_CONFIG": ":16:8",
     "CUBLASLT_WORKSPACE_SIZE": "1"
