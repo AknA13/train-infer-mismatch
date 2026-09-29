@@ -38,6 +38,8 @@ VIEWS = [
          flags=["--dtype", "bf16", "--attn", "sdpa", "--batch-size", "1", "--logits-dtype", "native"]),
     dict(name="hf_bf16_sdpa_bs1_bi", scorer="hf", toggle="batch-invariant aten ops",
          flags=["--dtype", "bf16", "--attn", "sdpa", "--batch-size", "1", "--batch-invariant"]),
+    dict(name="hf_bf16_sdpa_bs1_bi_ropefix", scorer="hf", toggle="batch-invariant ops + RoPE without bmm",
+         flags=["--dtype", "bf16", "--attn", "sdpa", "--batch-size", "1", "--batch-invariant", "--rope-no-bmm"]),
     dict(name="hf_fp16_sdpa_bs1", scorer="hf", toggle="fp16 instead of bf16",
          flags=["--dtype", "fp16", "--attn", "sdpa", "--batch-size", "1"]),
 
@@ -78,7 +80,8 @@ HEADLINE_PAIRS = [
     ("vllm_bf16_fa_bi", "vllm_sample_bi", "batch-invariant: prefill vs decode"),
     ("hf_fp16_sdpa_bs1", "vllm_fp16_fa", "fp16 both sides"),
     ("hf_fp32_eager", "vllm_fp32_triton", "fp32 both sides (kernel-only residual)"),
-    ("hf_bf16_sdpa_bs1_bi", "vllm_bf16_fa_bi", "batch-invariant both sides"),
+    ("hf_bf16_sdpa_bs1_bi", "vllm_bf16_fa_bi", "batch-invariant both sides (broken RoPE)"),
+    ("hf_bf16_sdpa_bs1_bi_ropefix", "vllm_bf16_fa_bi", "batch-invariant both sides, RoPE fixed"),
     ("hf_bf16_sdpa_bs1_fp32head", "vllm_bf16_fa", "fp32 head on trainer only"),
 ]
 

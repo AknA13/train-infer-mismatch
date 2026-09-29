@@ -47,6 +47,7 @@ def parse():
     ap.add_argument("--fp32-head", action="store_true")
     ap.add_argument("--tf32", action="store_true")
     ap.add_argument("--batch-invariant", action="store_true")
+    ap.add_argument("--rope-no-bmm", action="store_true", help="compute RoPE angles without bmm (fix for --batch-invariant)")
     ap.add_argument("--logits-dtype", default="fp32", choices=["fp32", "native"])
     ap.add_argument("--save-extra", action="store_true", help="store entropy/top1 (reference view)")
     ap.add_argument("--limit", type=int, default=0)
@@ -113,6 +114,9 @@ def main():
     if args.batch_invariant:
         from vllm.model_executor.layers.batch_invariant import enable_batch_invariant_mode
         enable_batch_invariant_mode()
+    if args.rope_no_bmm:
+        from mismatch.fp32head import patch_rope_no_bmm
+        patch_rope_no_bmm()
 
     from transformers import AutoModelForCausalLM
     dtype = DTYPES[args.dtype]
@@ -148,7 +152,7 @@ def main():
         extra = {"entropy": [r[1] for r in res], "top1": [r[2] for r in res]}
     meta = {"family": "hf", "model": args.model, "dtype": args.dtype, "attn": args.attn,
             "batch_size": args.batch_size, "fp32_head": args.fp32_head, "tf32": args.tf32,
-            "batch_invariant": args.batch_invariant, "logits_dtype": args.logits_dtype,
+            "batch_invariant": args.batch_invariant, "rope_no_bmm": args.rope_no_bmm, "logits_dtype": args.logits_dtype,
             "n_rows": len(rows), "tokens": n_tok, "load_s": load_s, "score_s": score_s,
             "torch": torch.__version__}
     import transformers

@@ -20,7 +20,7 @@ from mismatch import views as V
 from mismatch.common import corpus_paths
 
 # Views scored on the batch-invariant corpus: only the ones that pairing needs.
-BI_VIEWS = ["vllm_bf16_fa_bi", "hf_bf16_sdpa_bs1_bi", "hf_bf16_sdpa_bs1", "hf_fp32_eager"]
+BI_VIEWS = ["vllm_bf16_fa_bi", "hf_bf16_sdpa_bs1_bi", "hf_bf16_sdpa_bs1_bi_ropefix", "hf_bf16_sdpa_bs1", "hf_fp32_eager"]
 
 
 def main():

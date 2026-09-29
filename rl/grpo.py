@@ -88,6 +88,9 @@ def main():
     if args.batch_invariant:
         from vllm.model_executor.layers.batch_invariant import enable_batch_invariant_mode
         enable_batch_invariant_mode()          # trainer-side ops too (same process)
+        from mismatch.fp32head import patch_rope_no_bmm
+        patch_rope_no_bmm()                    # see docstring: BI bmm breaks HF RoPE
+        print("[grpo] batch-invariant: trainer RoPE patched to avoid the overridden bmm", flush=True)
 
     tok = AutoTokenizer.from_pretrained(args.model)
     train = load_problems("gsm8k", "train")
