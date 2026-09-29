@@ -1,84 +1,101 @@
-"""Which batch-invariant aten override breaks a transformers forward?
+"""Which part of vLLM's batch-invariant mode breaks a transformers forward?
 
-score_hf --batch-invariant produced rms error 0.35 (max 44 nats) against fp32,
-10x worse than plain bf16. vLLM's enable_batch_invariant_mode() replaces
-aten::{mm, addmm, matmul, linear, bmm, softmax, _softmax, _log_softmax,
-mean.dim} on CUDA. This probe calls each op with the shapes and dtypes a
-Qwen3-1.7B forward actually produces, before and after enabling the mode, and
-reports the max/rms deviation per op against the fp32 result, so the culprit is
-named rather than guessed. Also runs one full tiny forward per op subset by
-re-scoring 8 corpus rows with the mode on, to see if the per-op errors explain
-the model-level error.
+score_hf --batch-invariant gave rms error 0.35 / max 44 nats vs fp32 (10x worse
+than plain bf16). On Hopper + torch 2.9, enable_batch_invariant_mode() does
+NOT replace matmuls; it (a) sets CUBLAS_WORKSPACE_CONFIG=:16:8 and
+CUBLASLT_WORKSPACE_SIZE=1 (env vars, effective only before cuBLAS initialises),
+(b) prefers cuBLASLt, (c) disables bf16/fp16 reduced-precision reductions,
+(d) overrides aten softmax/_log_softmax/mean.dim/bmm with Triton kernels.
+
+Each configuration runs in its own process (so the env vars take effect) and
+scores the first 8 corpus rows through the real model, compared against the
+stored fp32 reference view. Arms:
+  plain            bf16, no mode
+  bi               mode enabled before any CUDA work
+  bi_noworkspace   mode enabled, then the two workspace env vars removed before
+                   the first cuBLAS call (isolates (a))
+  bi_nomean        mode enabled, RMSNorm rewritten as sum(x*x)/H so aten::mean.dim
+                   is never called (isolates the mean override)
+  bi_nolt          mode enabled, preferred BLAS set back to cublas (isolates (b))
 """
 import argparse
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
-
-import torch
-import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config as C
 
-
-def err(a, ref):
-    d = (a.float() - ref.float())
-    return {"rms": float(d.pow(2).mean().sqrt()), "max": float(d.abs().max())}
+ARMS = ["plain", "bi", "bi_noworkspace", "bi_nomean", "bi_nolt"]
 
 
-def cases(T=1500, H=2048, I=6144, V=151936, nh=16, hd=128):
-    g = torch.Generator(device="cuda").manual_seed(0)
-    r = lambda *s: torch.randn(*s, device="cuda", generator=g)
-    x2 = r(T, H); w_up = r(I, H) * 0.02; w_head = r(V, H) * 0.02; b = r(I)
-    x3 = r(1, T, H); q = r(1, nh, T, hd); k = r(1, nh, T, hd)
-    logits = r(T, V) * 3
-    return {
-        "linear_2d[T,H]x[I,H]": (F.linear, (x2, w_up)),
-        "linear_3d[1,T,H]x[I,H]": (F.linear, (x3, w_up)),
-        "linear_head[T,H]x[V,H]": (F.linear, (x2, w_head)),
-        "mm[T,H]@[H,I]": (torch.mm, (x2, w_up.t())),
-        "matmul_3d": (torch.matmul, (x3, w_up.t())),
-        "addmm": (lambda i, a, bm: torch.addmm(i, a, bm), (b, x2, w_up.t())),
-        "bmm[nh,T,hd]@[nh,hd,T]": (torch.bmm, (q[0], k[0].transpose(1, 2))),
-        "softmax_scores[nh,T,T]": (lambda s: torch.softmax(s, -1), (torch.matmul(q, k.transpose(2, 3))[0] / hd ** 0.5,)),
-        "log_softmax_logits[T,V]": (lambda s: torch.log_softmax(s, -1), (logits,)),
-        "mean_dim_rmsnorm[T,H]": (lambda s: s.pow(2).mean(-1, keepdim=True), (x2,)),
-    }
-
-
-def run_ops(dtype):
-    out = {}
-    cs = cases()
-    for name, (fn, args) in cs.items():
-        a32 = [t.float() for t in args]
-        ref = fn(*a32)
-        alow = [t.to(dtype) for t in args]
-        out[name] = {"ref_rms": float(ref.float().pow(2).mean().sqrt()), "vs_fp32": err(fn(*alow), ref)}
-    return out, cs
+def child(arm, model, corpus, ref_path, n_rows):
+    import torch
+    if arm != "plain":
+        from vllm.model_executor.layers.batch_invariant import enable_batch_invariant_mode
+        enable_batch_invariant_mode()
+        if arm == "bi_noworkspace":
+            os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None); os.environ.pop("CUBLASLT_WORKSPACE_SIZE", None)
+        if arm == "bi_nolt":
+            torch.backends.cuda.preferred_blas_library(backend="cublas")
+    torch.backends.cuda.matmul.allow_tf32 = False
+    from transformers import AutoModelForCausalLM
+    from transformers.models.qwen3 import modeling_qwen3 as mq
+    if arm == "bi_nomean":
+        def fwd(self, hidden_states):
+            dt = hidden_states.dtype
+            h = hidden_states.to(torch.float32)
+            var = (h * h).sum(-1, keepdim=True) / h.shape[-1]
+            h = h * torch.rsqrt(var + self.variance_epsilon)
+            return self.weight * h.to(dt)
+        mq.Qwen3RMSNorm.forward = fwd
+    from mismatch.common import read_corpus
+    from mismatch.store import View
+    rows = read_corpus(corpus)[:n_rows]
+    ref = View(ref_path)
+    model = AutoModelForCausalLM.from_pretrained(model, dtype=torch.bfloat16, attn_implementation="sdpa").cuda().eval()
+    import numpy as np
+    errs = []
+    with torch.no_grad():
+        for r in rows:
+            ids = torch.tensor([r["prompt_ids"] + r["completion_ids"]], device="cuda")
+            P = len(r["prompt_ids"])
+            logits = model(ids).logits[0, P - 1 : -1].float()
+            lp = logits.gather(1, ids[0, P:, None]).squeeze(1) - torch.logsumexp(logits, -1)
+            errs.append(lp.cpu().numpy() - ref.row(int(r["id"])))
+    d = np.concatenate(errs)
+    out = {"arm": arm, "n_tokens": int(len(d)), "rms": float(np.sqrt((d ** 2).mean())), "mean_abs": float(np.abs(d).mean()),
+           "max_abs": float(np.abs(d).max()), "frac_gt_1": float((np.abs(d) > 1).mean()),
+           "env": {k: os.environ.get(k) for k in ("CUBLAS_WORKSPACE_CONFIG", "CUBLASLT_WORKSPACE_SIZE")}}
+    print("RESULT " + json.dumps(out), flush=True)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=C.MODEL_ID)
-    ap.add_argument("--corpus", default="")
-    args = ap.parse_args()
-    torch.backends.cuda.matmul.allow_tf32 = False
-    res = {"dtype": "bf16"}
-    before, cs = run_ops(torch.bfloat16)
-    from vllm.model_executor.layers.batch_invariant import enable_batch_invariant_mode
-    enable_batch_invariant_mode()
-    after, _ = run_ops(torch.bfloat16)
-    # after: same fp32 reference is computed with overrides active too, so
-    # compare low-precision results before/after against the pre-mode fp32 ref
-    rows = [{"op": name, "bf16_plain_vs_fp32": before[name]["vs_fp32"],
-             "bf16_bi_vs_fp32": after[name]["vs_fp32"]} for name in before]
-    res["ops"] = rows
-    for r in rows:
-        b, a = r["bf16_plain_vs_fp32"], r["bf16_bi_vs_fp32"]
-        flag = "  <-- BI much worse" if a["rms"] > 3 * max(b["rms"], 1e-9) else ""
-        print(f"{r['op']:32s} plain rms {b['rms']:.3e} max {b['max']:.3e} | BI rms {a['rms']:.3e} max {a['max']:.3e}{flag}", flush=True)
-    C.publish_result("probe_bi_ops", res)
+    ap.add_argument("--rows", type=int, default=8)
+    ap.add_argument("--child", default="")
+    a = ap.parse_args()
+    from mismatch.common import corpus_paths
+    _, corpus, _ = corpus_paths(a.model)
+    ref = C.SCORES_DIR / C.model_tag(a.model) / "hf_fp32_eager.npz"
+    if a.child:
+        return child(a.child, a.model, str(corpus), str(ref), a.rows)
+    results = []
+    for arm in ARMS:
+        env = dict(os.environ); env.pop("CUBLAS_WORKSPACE_CONFIG", None); env.pop("CUBLASLT_WORKSPACE_SIZE", None)
+        p = subprocess.run([sys.executable, "-m", "bench.probe_bi", "--model", a.model, "--rows", str(a.rows), "--child", arm],
+                           env=env, capture_output=True, text=True)
+        line = [l for l in p.stdout.splitlines() if l.startswith("RESULT ")]
+        if line:
+            r = json.loads(line[-1][7:]); results.append(r)
+            print(f"{arm:16s} rms {r['rms']:.4f} mean|d| {r['mean_abs']:.4f} max {r['max_abs']:.2f} frac>1nat {r['frac_gt_1']:.2e} env={r['env']}", flush=True)
+        else:
+            print(f"{arm:16s} FAILED rc={p.returncode}\n{p.stderr[-2000:]}", flush=True)
+            results.append({"arm": arm, "failed": True})
+    C.publish_result("probe_bi", {"model": a.model, "rows": a.rows, "arms": results})
 
 
 if __name__ == "__main__":
