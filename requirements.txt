@@ -1,0 +1,11 @@
+# Versions this work was run with (H200, CUDA 12.8). vLLM pins its own torch;
+# install vLLM first and let it choose, then add the rest.
+vllm==0.12.0
+torch==2.9.0
+transformers==4.57.6
+numpy==2.2.6
+datasets==4.6.1
+matplotlib==3.10.8
+math-verify==0.9.0
+# optional: FlashInfer attention backend view (vllm_bf16_flashinfer)
+flashinfer-python==0.5.3
